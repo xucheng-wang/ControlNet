@@ -14,7 +14,7 @@ os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 # Configs
 
 
-resume_path = './models/control_sd15_ini_12debug.ckpt'
+resume_path = './models/control_sd15_ini.ckpt'
 batch_size = 4
 logger_freq = 300
 learning_rate = 1e-5
