@@ -19,14 +19,18 @@ import os
 
 class MyDataset(Dataset):
     def __init__(self):
-        self.source_path = "/project/cigserver5/export1/david.w/MixViewDiff/brooklyn/concat_data_debug_set2/near"
-        self.target_path = "/project/cigserver5/export1/david.w/MixViewDiff/brooklyn/concat_data_debug_set2/target"
+        self.source_path = "/project/cigserver5/export1/david.w/MixViewDiff/brooklyn/train/near"
+        self.target_path = "/project/cigserver5/export1/david.w/MixViewDiff/brooklyn/train/target"
         self.data = os.listdir(self.source_path)
 
     def __len__(self):
         return len(self.data)
 
     def __getitem__(self, idx):
+        
+        DEGREES_PER_PIXEL_LAT = 2.0357e-6
+        DEGREES_PER_PIXEL_LON = 2.680e-6
+        IMAGE_SIZE = 512
         
         folder_name = self.data[idx]
         target_filename = os.path.join(self.target_path, f"{folder_name}.jpg")
@@ -45,9 +49,9 @@ class MyDataset(Dataset):
         
         # exit()
         
-        target_position = (folder_name.split("_")[0], folder_name.split("_")[1])
-        target_x = np.full((512, 512), target_position[0]).astype(np.float32)
-        target_y = np.full((512, 512), target_position[1]).astype(np.float32)
+        target_position_coord = (folder_name.split("_")[0], folder_name.split("_")[1])
+        target_x = np.full((512, 512), 0).astype(np.float32)
+        target_y = np.full((512, 512), 0).astype(np.float32)
         target_position = np.stack([target_x, target_y], axis=-1)
         # print(f"target_position_shape: {target_position.shape}")
         # print(f"position unique: {np.unique(target_position)}")
@@ -96,8 +100,15 @@ class MyDataset(Dataset):
             near_streetviews.append(near_streetview)
             
             near_position = (near_structure_img.split("_")[0], near_structure_img.split("_")[1].replace(".jpg", ""))
-            near_x = np.full((512, 512), near_position[0]).astype(np.float32)
-            near_y = np.full((512, 512), near_position[1]).astype(np.float32)
+            #convert target_position_coord and near_position to float
+            target_position_coord = (float(target_position_coord[0]), float(target_position_coord[1]))
+            near_position = (float(near_position[0]), float(near_position[1]))
+            scale_near_x = ((near_position[0]-target_position_coord[0])/DEGREES_PER_PIXEL_LAT)/256
+            # print(f"scale_near_x: {scale_near_x}")
+            scale_near_y = ((near_position[1]-target_position_coord[1])/DEGREES_PER_PIXEL_LON)/256
+            # print(f"scale_near_y: {scale_near_y}")
+            near_x = np.full((512, 512), scale_near_x).astype(np.float32)
+            near_y = np.full((512, 512), scale_near_y).astype(np.float32)
             near_position = np.stack([near_x, near_y], axis=-1)
             near_positions_img.append(near_position)
             
@@ -121,7 +132,7 @@ class MyDataset(Dataset):
         # if source_image.dtype.kind in {'U', 'S'}:  # Check if the array contains string data
         #     source_image = source_image.astype(np.float32)
         
-        return dict(jpg=target_img, txt="a street view panorama", hint=source_image)
+        return dict(jpg=target_img, txt="a streetview panorama", hint=source_image)
     
     
     
