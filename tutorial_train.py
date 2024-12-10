@@ -8,15 +8,15 @@ from cldm.model import create_model, load_state_dict
 import os
 
 
-os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+# os.environ["CUDA_VISIBLE_DEVICES"] = "3"
 
 
 # Configs
 
 
-resume_path = './models/control_sd15_ini.ckpt'
-batch_size = 4
-logger_freq = 300
+resume_path = '/project/cigserver5/export1/david.w/MixViewDiff/ControlNet/lightning_logs/version_1/checkpoints/epoch=36-step=63084.ckpt'
+batch_size = 12
+logger_freq = 30
 learning_rate = 1e-5
 sd_locked = True
 only_mid_control = False
@@ -32,7 +32,7 @@ model.only_mid_control = only_mid_control
 
 # Misc
 dataset = MyDataset()
-dataloader = DataLoader(dataset, num_workers=4, batch_size=batch_size, shuffle=True)
+dataloader = DataLoader(dataset, num_workers=16, batch_size=batch_size, shuffle=True)
 logger = ImageLogger(batch_frequency=logger_freq)
 trainer = pl.Trainer(gpus=1, precision=32, callbacks=[logger])
 
