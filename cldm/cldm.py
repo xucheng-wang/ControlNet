@@ -182,7 +182,7 @@ class ControlNet(nn.Module):
         self.num_heads_upsample = num_heads_upsample
         self.predict_codebook_ids = n_embed is not None
         
-        self.resnet = CustomModel()
+        # self.resnet = CustomModel()
 
         self.mixview_diff = MixedViewDiff()
         
@@ -387,35 +387,38 @@ class ControlNet(nn.Module):
         # total 24 channels
         #----------------------#
         target_satellite = hint[:, :3,...]
-        target_structure = hint[:, 3,...].unsqueeze(1)
+        #print("target_satellite", target_satellite.shape)
+        target_structure = hint[:, 3:4,...]
+        #print("target_structure", target_structure.shape)
         target_pos = hint[:,4:6,...]
-        surround_structure = hint[:, 6:9,...]
-        surround_panoramas = hint[:, 9:18,...]
+        #print("target_pos", target_pos.shape)
+        surround_structure = hint[:, 6:9,...].unsqueeze(2)
+        #print("surround_structure", surround_structure.shape)
+        surround_panoramas1 = hint[:, 9:12,...].unsqueeze(1)
+        surround_panoramas2 = hint[:, 12:15,...].unsqueeze(1)
+        surround_panoramas3 = hint[:, 15:18,...].unsqueeze(1)
+        surround_panoramas = th.cat([surround_panoramas1, surround_panoramas2, surround_panoramas3], dim=1)
+        #print("surround_panoramas", surround_panoramas.shape)
         surround_pos = hint[:, 18:,...]
+        surround_pos=surround_pos[:, :, 0:1, 0:1]
+        #print("surround_pos", surround_pos.shape)
+        # exit()
+        # print("hint", hint.shape)
+        # bs = 3
+        # T = 3
+        # target_pos = torch.randn(bs, 2, 512, 512).to('cuda')       # [batch_size,2,512,512]
+        # target_structure = torch.randn(bs, 1, 512, 512).to('cuda')  # [batch_size,1,512,512]
+        # target_satellite = torch.randn(bs, 3, 512,512).to('cuda')    # [batch_size,3,512,512]
+        # surround_pos = torch.randn(bs, T * 2,1,1).to('cuda')          # [batch_size,T * 2,1,1]
+        # surround_structure = torch.randn(bs, T, 1,512,512).to('cuda')# [batch_size,T,1,512,512]
+        # surround_panoramas = torch.randn(bs, T, 3,512,512).to('cuda')# [batch_size,T,3,512,512]
 
+        
+        
+        
         hint_real = self.mixview_diff(target_pos, target_structure, target_satellite, 
-                                      surround_pos, surround_structure, surround_panoramas, False, False)
+                                      surround_pos, surround_structure, surround_panoramas,  verbose=False, view_result=True)
         
-        print("hint_real", hint_real.shape)
-
-        # hint_real = self.mixviewattn(target_pos, target_structure, target_satellite, surround_pos, surround_structure, surround_panoramas)
-        
-        # satellite_features = self.satellite_cnn(target_satellite)
-        
-        # structure_features = self.structure_cnn(target_structure)
-        
-        # print("sat_shape", satellite_features.shape)
-        
-        # hint_real = th.cat([satellite_features, structure_features], dim=1)
-        
-        # print("target_satellite", target_satellite.shape)
-        # print("target_structure", target_structure.shape)
-
-        # hint_real = self.resnet(target_satellite, target_structure)
-
-        # print("hint_real", hint_real.shape)
-        
-        # hint_real = self.combined_hint_decoder(hint_real)
         
         #save hint_real as jpg
         # import numpy as np
@@ -427,16 +430,12 @@ class ControlNet(nn.Module):
         # image = Image.fromarray(image)
         # image.save('hint_real.jpg')
         
-        
-        # print(hint_real)
-        
         t_emb = timestep_embedding(timesteps, self.model_channels, repeat_only=False)
         emb = self.time_embed(t_emb)
 
         guided_hint = self.input_hint_block(hint_real, emb, context)
 
         outs = []
-
         h = x.type(self.dtype)
         for module, zero_conv in zip(self.input_blocks, self.zero_convs):
             if guided_hint is not None:
@@ -584,227 +583,227 @@ class ControlLDM(LatentDiffusion):
             self.cond_stage_model = self.cond_stage_model.cuda()
 
 
-class PositionEncoder(nn.Module):  # Nerf position encoder
-    def __init__(self, output_dim, input_dim = 2): #L_embed is output_dim/2
-        super(PositionEncoder, self).__init__()
-        self.input_dim = input_dim
-        L_embed = int(output_dim / 2)
-        self.L_embed = L_embed
+# class PositionEncoder(nn.Module):  # Nerf position encoder
+#     def __init__(self, output_dim, input_dim = 2): #L_embed is output_dim/2
+#         super(PositionEncoder, self).__init__()
+#         self.input_dim = input_dim
+#         L_embed = int(output_dim / 2)
+#         self.L_embed = L_embed
 
-        # Compute frequencies (2^i) for encoding
-        self.freq_bands = 2.0 ** torch.linspace(0, L_embed - 1, L_embed)
+#         # Compute frequencies (2^i) for encoding
+#         self.freq_bands = 2.0 ** torch.linspace(0, L_embed - 1, L_embed)
 
-    def forward(self, pos):
-        rets = []
-        for freq in self.freq_bands:
-            rets.append(torch.sin(freq * pos)) 
-            rets.append(torch.cos(freq * pos))
-        # Concatenate all encodings along the last dimension
-        pos_enc = torch.cat(rets, dim=-1)
-        return pos_enc
-
-
-class StructureEncoder(nn.Module):
-    def __init__(self, output_dim, img_height, img_width):
-        super(StructureEncoder, self).__init__()
-        self.img_height = img_height
-        self.img_width = img_width
-
-        self.conv = nn.Sequential(
-            nn.Conv2d(1, 32, kernel_size=7, stride=2, padding=3),
-            nn.ReLU(),
-            nn.MaxPool2d(2),
-            nn.Conv2d(32, 64, kernel_size=5, stride=2, padding=2),
-            nn.ReLU(),
-            nn.MaxPool2d(2),
-            nn.Conv2d(64, 128, kernel_size=3, stride=2, padding=1),
-            nn.ReLU(),
-            nn.AdaptiveAvgPool2d((1, 1))
-        )
-        self.fc = nn.Linear(128, output_dim)
-
-    def forward(self, x):
-        # x: [batch_size, 1, img_height, img_width]
-        features = self.conv(x)
-        features = features.view(features.size(0), -1)
-        out = self.fc(features)
-        return out
+#     def forward(self, pos):
+#         rets = []
+#         for freq in self.freq_bands:
+#             rets.append(torch.sin(freq * pos)) 
+#             rets.append(torch.cos(freq * pos))
+#         # Concatenate all encodings along the last dimension
+#         pos_enc = torch.cat(rets, dim=-1)
+#         return pos_enc
 
 
-class SatelliteEncoder(nn.Module):
-    def __init__(self, hidden_dim):
-        super(SatelliteEncoder, self).__init__()
+# class StructureEncoder(nn.Module):
+#     def __init__(self, output_dim, img_height, img_width):
+#         super(StructureEncoder, self).__init__()
+#         self.img_height = img_height
+#         self.img_width = img_width
 
-        self.conv = nn.Sequential(
-            nn.Conv2d(3, 32, kernel_size=7, stride=2, padding=3),  # Output: 256x256
-            nn.ReLU(),
-            nn.Conv2d(32, 64, kernel_size=5, stride=2, padding=2),  # Output: 128x128
-            nn.ReLU(),
-            nn.Conv2d(64, hidden_dim, kernel_size=3, stride=2, padding=1),  # Output: 64x64
-            nn.ReLU(),
-        )
+#         self.conv = nn.Sequential(
+#             nn.Conv2d(1, 32, kernel_size=7, stride=2, padding=3),
+#             nn.ReLU(),
+#             nn.MaxPool2d(2),
+#             nn.Conv2d(32, 64, kernel_size=5, stride=2, padding=2),
+#             nn.ReLU(),
+#             nn.MaxPool2d(2),
+#             nn.Conv2d(64, 128, kernel_size=3, stride=2, padding=1),
+#             nn.ReLU(),
+#             nn.AdaptiveAvgPool2d((1, 1))
+#         )
+#         self.fc = nn.Linear(128, output_dim)
 
-    def forward(self, x):
-        # x: [batch_size, 3, 512, 512]
-        out = self.conv(x)
-        return out  # [batch_size, hidden_dim, 64, 64]
-
-
-class WeightedVCNN(nn.Module):
-    def __init__(self, hidden_dim):
-        super(WeightedVCNN, self).__init__()
-        self.conv = nn.Sequential(
-            nn.Conv2d(3, 32, kernel_size=7, stride=2, padding=3),  # Output: 256x256
-            nn.ReLU(),
-            nn.Conv2d(32, 64, kernel_size=5, stride=2, padding=2),  # Output: 128x128
-            nn.ReLU(),
-            nn.Conv2d(64, hidden_dim, kernel_size=3, stride=2, padding=1),  # Output: 64x64
-            nn.ReLU(),
-        )
-
-    def forward(self, x):
-        return self.conv(x)  # [batch_size, hidden_dim, 64, 64]
+#     def forward(self, x):
+#         # x: [batch_size, 1, img_height, img_width]
+#         features = self.conv(x)
+#         features = features.view(features.size(0), -1)
+#         out = self.fc(features)
+#         return out
 
 
-class Decoder(nn.Module):
-    def __init__(self, hidden_dim):
-        super(Decoder, self).__init__()
-        self.decoder = nn.Sequential(
-            nn.ConvTranspose2d(2 * hidden_dim, hidden_dim, kernel_size=4, stride=2, padding=1),  # Output: 128x128
-            nn.ReLU(),
-            nn.ConvTranspose2d(hidden_dim, hidden_dim // 2, kernel_size=4, stride=2, padding=1),  # Output: 256x256
-            nn.ReLU(),
-            nn.ConvTranspose2d(hidden_dim // 2, hidden_dim // 4, kernel_size=4, stride=2, padding=1),  # Output: 512x512
-            nn.ReLU(),
-            nn.Conv2d(hidden_dim // 4, 3, kernel_size=3, stride=1, padding=1),
-            nn.Sigmoid()  # Assuming output image pixel values between 0 and 1
-        )
+# class SatelliteEncoder(nn.Module):
+#     def __init__(self, hidden_dim):
+#         super(SatelliteEncoder, self).__init__()
 
-    def forward(self, x):
-        # x: [batch_size, 2 * hidden_dim, 64, 64]
-        out = self.decoder(x)
-        return out  # [batch_size, 3, 512, 512]
+#         self.conv = nn.Sequential(
+#             nn.Conv2d(3, 32, kernel_size=7, stride=2, padding=3),  # Output: 256x256
+#             nn.ReLU(),
+#             nn.Conv2d(32, 64, kernel_size=5, stride=2, padding=2),  # Output: 128x128
+#             nn.ReLU(),
+#             nn.Conv2d(64, hidden_dim, kernel_size=3, stride=2, padding=1),  # Output: 64x64
+#             nn.ReLU(),
+#         )
 
-
-class MixedViewEncoder(nn.Module):
-    def __init__(self, position_dim=64, structure_dim=128, hidden_dim=64, img_height=512, img_width=512):
-        super(MixedViewEncoder, self).__init__()
-        self.img_height = img_height
-        self.img_width = img_width
-
-        self.position_encoder = PositionEncoder(position_dim)
-        self.structure_encoder = StructureEncoder(structure_dim, img_height, img_width)
-
-        self.satellite_cnn = SatelliteEncoder(hidden_dim)
-        self.weighted_V_cnn = WeightedVCNN(hidden_dim)
-
-        self.query_mlp = nn.Linear(2*position_dim + structure_dim, hidden_dim)
-        self.key_mlp = nn.Linear(2*position_dim + structure_dim, hidden_dim)
-
-        self.hidden_dim = hidden_dim
-
-    def forward(self, target_pos, target_structure, target_satellite, surround_pos, surround_structure,
-                surround_panoramas):
-        batch_size = target_pos.size(0)
-        t = int(surround_pos.size(1)/2)
-
-        # === Target ===
-        target_pos_cut = target_pos[:, :, 0, 0]
-        print(target_pos.shape, target_structure.shape)
-        target_pos_emb = self.position_encoder(target_pos_cut)
-        # target_pos_emb: [batch_size, position_dim]
-
-        target_structure_emb = self.structure_encoder(target_structure)
-        # target_structure_emb: [batch_size, structure_dim]
-
-        print(target_pos_emb.shape, target_structure_emb.shape)
+#     def forward(self, x):
+#         # x: [batch_size, 3, 512, 512]
+#         out = self.conv(x)
+#         return out  # [batch_size, hidden_dim, 64, 64]
 
 
-        target_features = torch.cat([target_pos_emb, target_structure_emb], dim=1)
-        # target_features: [batch_size, position_dim + structure_dim]
+# class WeightedVCNN(nn.Module):
+#     def __init__(self, hidden_dim):
+#         super(WeightedVCNN, self).__init__()
+#         self.conv = nn.Sequential(
+#             nn.Conv2d(3, 32, kernel_size=7, stride=2, padding=3),  # Output: 256x256
+#             nn.ReLU(),
+#             nn.Conv2d(32, 64, kernel_size=5, stride=2, padding=2),  # Output: 128x128
+#             nn.ReLU(),
+#             nn.Conv2d(64, hidden_dim, kernel_size=3, stride=2, padding=1),  # Output: 64x64
+#             nn.ReLU(),
+#         )
 
-        Q = self.query_mlp(target_features)
-        # Q: [batch_size, hidden_dim]
-        Q = Q.unsqueeze(1)
-        # Q: [batch_size, 1, hidden_dim]
-
-        # === Surroundings ===
-        surround_pos_flat = surround_pos[:, :, 0, 0].reshape(batch_size * t, 2)
-        # surround_pos_flat: [batch_size * t, 2]
-        surround_pos_emb = self.position_encoder(surround_pos_flat)
-        # surround_pos_emb: [batch_size * t, position_dim*2]
-
-        surround_structure_flat = surround_structure.reshape(
-            batch_size * t, 1, 512, 512)
-        # surround_structure_flat: [batch_size * t, 1, img_height, img_width]
-        surround_structure_emb = self.structure_encoder(surround_structure_flat)
-        print("surround_structure_emb", surround_structure_emb.shape)
-        # surround_structure_emb: [batch_size * t, structure_dim]
-
-        surround_features = torch.cat([surround_pos_emb, surround_structure_emb], dim=1)
-        # surround_features: [batch_size * t, position_dim + structure_dim]
-        K = self.key_mlp(surround_features)
-        # K: [batch_size * t, hidden_dim]
-        K = K.view(batch_size, t, -1)
-        # K: [batch_size, t, hidden_dim]
-
-        surround_panoramas_flat = surround_panoramas.reshape(
-            batch_size, t, 3, 512, 512)
-        # surround_panoramas_flat: [batch_size, t, 3, img_height, img_width]
-        V = surround_panoramas_flat
-        # V: [batch_size, t, 3, img_height, img_width]
-        print("V", V.shape)
-        # === Cross Attention Calculation ===
-        attention_scores = torch.matmul(Q, K.transpose(1, 2))
-        # attention_scores: [batch_size, 1, t]
-        attention_weights = F.softmax(attention_scores / (self.hidden_dim ** 0.5), dim=-1)
-        # attention_weights: [batch_size, 1, t]
-        attention_weights = attention_weights.unsqueeze(-1).unsqueeze(-1)
-        # attention_weights: [batch_size, 1, t, 1, 1]
-
-        print("attention_weights", attention_weights.shape)
-
-        V = V.permute(0, 2, 1, 3, 4)
-
-        print("V", V.shape)
-        # V: [batch_size, 3, t, img_height, img_width]
-        weighted_V = torch.sum(V * attention_weights, dim=2)
-        # weighted_V: [batch_size, 3, img_height, img_width]
-
-        print("weighted_V", weighted_V.shape)
-
-        # === Satellite Processing ===
-        target_satellite_emb = self.satellite_cnn(target_satellite)
-        # target_satellite_emb: [batch_size, hidden_dim, 64, 64]
-
-        print("target_satellite_emb", target_satellite_emb.shape)
-
-        # Process weighted_V
-        weighted_V_emb = self.weighted_V_cnn(weighted_V)
-        # weighted_V_emb: [batch_size, hidden_dim, 64, 64]
-
-        print("weighted_V_emb", weighted_V_emb.shape)
-
-        # Combine along channel dimension
-        combined_features = torch.cat([weighted_V_emb, target_satellite_emb], dim=1)
-        # combined_features: [batch_size, 2 * hidden_dim, 64, 64]
-
-        print("combined_features", combined_features.shape)
-
-        return combined_features
+#     def forward(self, x):
+#         return self.conv(x)  # [batch_size, hidden_dim, 64, 64]
 
 
-class MixedViewDiff(nn.Module):
-    def __init__(self, encoder: MixedViewEncoder, decoder: Decoder):
-        super(MixedViewDiff, self).__init__()
-        self.encoder = encoder
-        self.decoder = decoder
+# class Decoder(nn.Module):
+#     def __init__(self, hidden_dim):
+#         super(Decoder, self).__init__()
+#         self.decoder = nn.Sequential(
+#             nn.ConvTranspose2d(2 * hidden_dim, hidden_dim, kernel_size=4, stride=2, padding=1),  # Output: 128x128
+#             nn.ReLU(),
+#             nn.ConvTranspose2d(hidden_dim, hidden_dim // 2, kernel_size=4, stride=2, padding=1),  # Output: 256x256
+#             nn.ReLU(),
+#             nn.ConvTranspose2d(hidden_dim // 2, hidden_dim // 4, kernel_size=4, stride=2, padding=1),  # Output: 512x512
+#             nn.ReLU(),
+#             nn.Conv2d(hidden_dim // 4, 3, kernel_size=3, stride=1, padding=1),
+#             nn.Sigmoid()  # Assuming output image pixel values between 0 and 1
+#         )
 
-    def forward(self, *args, **kwargs):
-        combined_features = self.encoder(*args, **kwargs)
-        output = self.decoder(combined_features)
-        print(output)
-        #save output as jpg
+#     def forward(self, x):
+#         # x: [batch_size, 2 * hidden_dim, 64, 64]
+#         out = self.decoder(x)
+#         return out  # [batch_size, 3, 512, 512]
+
+
+# class MixedViewEncoder(nn.Module):
+#     def __init__(self, position_dim=64, structure_dim=128, hidden_dim=64, img_height=512, img_width=512):
+#         super(MixedViewEncoder, self).__init__()
+#         self.img_height = img_height
+#         self.img_width = img_width
+
+#         self.position_encoder = PositionEncoder(position_dim)
+#         self.structure_encoder = StructureEncoder(structure_dim, img_height, img_width)
+
+#         self.satellite_cnn = SatelliteEncoder(hidden_dim)
+#         self.weighted_V_cnn = WeightedVCNN(hidden_dim)
+
+#         self.query_mlp = nn.Linear(2*position_dim + structure_dim, hidden_dim)
+#         self.key_mlp = nn.Linear(2*position_dim + structure_dim, hidden_dim)
+
+#         self.hidden_dim = hidden_dim
+
+#     def forward(self, target_pos, target_structure, target_satellite, surround_pos, surround_structure,
+#                 surround_panoramas):
+#         batch_size = target_pos.size(0)
+#         t = int(surround_pos.size(1)/2)
+
+#         # === Target ===
+#         target_pos_cut = target_pos[:, :, 0, 0]
+#         print(target_pos.shape, target_structure.shape)
+#         target_pos_emb = self.position_encoder(target_pos_cut)
+#         # target_pos_emb: [batch_size, position_dim]
+
+#         target_structure_emb = self.structure_encoder(target_structure)
+#         # target_structure_emb: [batch_size, structure_dim]
+
+#         print(target_pos_emb.shape, target_structure_emb.shape)
+
+
+#         target_features = torch.cat([target_pos_emb, target_structure_emb], dim=1)
+#         # target_features: [batch_size, position_dim + structure_dim]
+
+#         Q = self.query_mlp(target_features)
+#         # Q: [batch_size, hidden_dim]
+#         Q = Q.unsqueeze(1)
+#         # Q: [batch_size, 1, hidden_dim]
+
+#         # === Surroundings ===
+#         surround_pos_flat = surround_pos[:, :, 0, 0].reshape(batch_size * t, 2)
+#         # surround_pos_flat: [batch_size * t, 2]
+#         surround_pos_emb = self.position_encoder(surround_pos_flat)
+#         # surround_pos_emb: [batch_size * t, position_dim*2]
+
+#         surround_structure_flat = surround_structure.reshape(
+#             batch_size * t, 1, 512, 512)
+#         # surround_structure_flat: [batch_size * t, 1, img_height, img_width]
+#         surround_structure_emb = self.structure_encoder(surround_structure_flat)
+#         print("surround_structure_emb", surround_structure_emb.shape)
+#         # surround_structure_emb: [batch_size * t, structure_dim]
+
+#         surround_features = torch.cat([surround_pos_emb, surround_structure_emb], dim=1)
+#         # surround_features: [batch_size * t, position_dim + structure_dim]
+#         K = self.key_mlp(surround_features)
+#         # K: [batch_size * t, hidden_dim]
+#         K = K.view(batch_size, t, -1)
+#         # K: [batch_size, t, hidden_dim]
+
+#         surround_panoramas_flat = surround_panoramas.reshape(
+#             batch_size, t, 3, 512, 512)
+#         # surround_panoramas_flat: [batch_size, t, 3, img_height, img_width]
+#         V = surround_panoramas_flat
+#         # V: [batch_size, t, 3, img_height, img_width]
+#         print("V", V.shape)
+#         # === Cross Attention Calculation ===
+#         attention_scores = torch.matmul(Q, K.transpose(1, 2))
+#         # attention_scores: [batch_size, 1, t]
+#         attention_weights = F.softmax(attention_scores / (self.hidden_dim ** 0.5), dim=-1)
+#         # attention_weights: [batch_size, 1, t]
+#         attention_weights = attention_weights.unsqueeze(-1).unsqueeze(-1)
+#         # attention_weights: [batch_size, 1, t, 1, 1]
+
+#         print("attention_weights", attention_weights.shape)
+
+#         V = V.permute(0, 2, 1, 3, 4)
+
+#         print("V", V.shape)
+#         # V: [batch_size, 3, t, img_height, img_width]
+#         weighted_V = torch.sum(V * attention_weights, dim=2)
+#         # weighted_V: [batch_size, 3, img_height, img_width]
+
+#         print("weighted_V", weighted_V.shape)
+
+#         # === Satellite Processing ===
+#         target_satellite_emb = self.satellite_cnn(target_satellite)
+#         # target_satellite_emb: [batch_size, hidden_dim, 64, 64]
+
+#         print("target_satellite_emb", target_satellite_emb.shape)
+
+#         # Process weighted_V
+#         weighted_V_emb = self.weighted_V_cnn(weighted_V)
+#         # weighted_V_emb: [batch_size, hidden_dim, 64, 64]
+
+#         print("weighted_V_emb", weighted_V_emb.shape)
+
+#         # Combine along channel dimension
+#         combined_features = torch.cat([weighted_V_emb, target_satellite_emb], dim=1)
+#         # combined_features: [batch_size, 2 * hidden_dim, 64, 64]
+
+#         print("combined_features", combined_features.shape)
+
+#         return combined_features
+
+
+# class MixedViewDiff(nn.Module):
+#     def __init__(self, encoder: MixedViewEncoder, decoder: Decoder):
+#         super(MixedViewDiff, self).__init__()
+#         self.encoder = encoder
+#         self.decoder = decoder
+
+#     def forward(self, *args, **kwargs):
+#         combined_features = self.encoder(*args, **kwargs)
+#         output = self.decoder(combined_features)
+#         print(output)
+#         #save output as jpg
 
         
-        return output
+#         return output

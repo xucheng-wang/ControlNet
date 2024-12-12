@@ -39,6 +39,7 @@ class MyDataset(Dataset):
         target_img = cv2.cvtColor(target_img, cv2.COLOR_BGR2RGB)
         target_img = (target_img.astype(np.float32) / 127.5) - 1.0
         
+        
         target_structure_path = os.path.join(self.source_path, folder_name, "structure.jpg")
         target_structure = cv2.imread(target_structure_path, cv2.IMREAD_GRAYSCALE)
         target_structure = cv2.resize(target_structure, (512, 512))
