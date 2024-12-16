@@ -19,8 +19,8 @@ import os
 
 class MyDataset(Dataset):
     def __init__(self):
-        self.source_path = "/project/cigserver5/export1/david.w/MixViewDiff/brooklyn/train/near"
-        self.target_path = "/project/cigserver5/export1/david.w/MixViewDiff/brooklyn/train/target"
+        self.source_path = "/project/cigserver5/export1/david.w/MixViewDiff/brooklyn/test/near"
+        self.target_path = "/project/cigserver5/export1/david.w/MixViewDiff/brooklyn/test/target"
         self.data = os.listdir(self.source_path)
 
     def __len__(self):
